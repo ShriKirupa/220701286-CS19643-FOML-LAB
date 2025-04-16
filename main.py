@@ -96,34 +96,34 @@ if st.session_state.sources:
             full_response = response.get("full", "").strip()
             code_response = response.get("code")
             code_response = code_response.strip() if code_response else ""
+
             # Extract <think> content using regex
             think_match = re.search(r"<think>(.*?)</think>", full_response, re.DOTALL)
             think_text = think_match.group(1).strip() if think_match else ""
+
             # Remove the <think> block from full_response
             full_response = re.sub(r"<think>.*?</think>", "", full_response, flags=re.DOTALL).strip()
-            # Format think block in markdown
+
+            # Format <think> content in markdown
+            formatted_think = ""
             if think_text:
                 formatted_think = f"> 💭 **DeepSeek Thinking:**\n>\n> " + "\n> ".join(think_text.splitlines())
-            else:
-                formatted_think = ""
-                # Combine all parts
-                combined_response = ""
-                if formatted_think:
-                    combined_response += formatted_think + "\n\n"
-                    combined_response += full_response if full_response else "⚠️ No answer returned."
 
-            # Combining the response properly
+            # Combine final response
+            combined_response = ""
+            if formatted_think:
+                combined_response += formatted_think + "\n\n"
+            combined_response += full_response if full_response else "⚠️ No answer returned."
+
+            # Add code block if available
             if code_response:
                 try:
                     lexer = guess_lexer(code_response)
                     language = lexer.name.lower().split()[0]
                 except ClassNotFound:
                     language = ""
-
                 formatted_code = f"```{language}\n{code_response}\n```"
-                combined_response = f"{full_response}\n\n### Code:\n{formatted_code}"
-            else:
-                combined_response = full_response or "⚠️ No answer returned."
+                combined_response += f"\n\n### Code:\n{formatted_code}"
 
             st.session_state.chat_history.append(("bot", combined_response))
 
