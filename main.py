@@ -1,4 +1,5 @@
 import streamlit as st
+import time
 from loader import load_pdf, load_text, load_url, load_yt_transcript
 from vector_store import VectorStore
 from ollama_chat import call_deepseek
@@ -75,6 +76,7 @@ if st.session_state.sources:
     user_input = st.chat_input("Ask something...")
 
     if user_input:
+        # Display user message immediately in the chat
         st.session_state.chat_history.append(("user", user_input))
 
         allowed_ids = [src["id"] for src in st.session_state.sources if src["checked"]]
@@ -125,9 +127,10 @@ if st.session_state.sources:
                 formatted_code = f"```{language}\n{code_response}\n```"
                 combined_response += f"\n\n### Code:\n{formatted_code}"
 
-            st.session_state.chat_history.append(("bot", combined_response))
+            # Add assistant's response after user message
+            st.session_state.chat_history.append(("assistant", combined_response))
 
-    # Display chat history
+    # Display full chat history (including new messages)
     for role, message in st.session_state.chat_history:
         with st.chat_message("user" if role == "user" else "assistant"):
             st.markdown(message)
