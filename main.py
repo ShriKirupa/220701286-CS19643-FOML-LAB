@@ -76,7 +76,7 @@ if st.session_state.sources:
     user_input = st.chat_input("Ask something...")
 
     if user_input:
-        # Display user message immediately in the chat
+        st.chat_message("user").markdown(user_input)
         st.session_state.chat_history.append(("user", user_input))
 
         allowed_ids = [src["id"] for src in st.session_state.sources if src["checked"]]
@@ -111,29 +111,34 @@ if st.session_state.sources:
             if think_text:
                 formatted_think = f"> 💭 **DeepSeek Thinking:**\n>\n> " + "\n> ".join(think_text.splitlines())
 
-            # Combine final response
-            combined_response = ""
-            if formatted_think:
-                combined_response += formatted_think + "\n\n"
-            combined_response += full_response if full_response else "⚠️ No answer returned."
-
             # Add code block if available
+            formatted_code = ""
             if code_response:
                 try:
                     lexer = guess_lexer(code_response)
                     language = lexer.name.lower().split()[0]
                 except ClassNotFound:
                     language = ""
-                formatted_code = f"```{language}\n{code_response}\n```"
-                combined_response += f"\n\n### Code:\n{formatted_code}"
+                formatted_code = f"\n\n### Code:\n```{language}\n{code_response}\n```"
 
-            # Add assistant's response after user message
-            st.session_state.chat_history.append(("assistant", combined_response))
+            # Final full message
+            final_message = ""
+            if formatted_think:
+                final_message += formatted_think + "\n\n"
+            final_message += full_response if full_response else "⚠️ No answer returned."
+            final_message += formatted_code
 
-    # Display full chat history (including new messages)
-    for role, message in st.session_state.chat_history:
-        with st.chat_message("user" if role == "user" else "assistant"):
-            st.markdown(message)
+            # Save to chat history
+            st.session_state.chat_history.append(("assistant", final_message))
+
+            # Show assistant message with typing animation
+            with st.chat_message("assistant"):
+                placeholder = st.empty()
+                animated_text = ""
+                for char in final_message:
+                    animated_text += char
+                    placeholder.markdown(animated_text)
+                    time.sleep(0.005)  # Adjust typing speed here
 else:
     st.info("📥 Upload a file or enter text/URL to start chatting.")
 
