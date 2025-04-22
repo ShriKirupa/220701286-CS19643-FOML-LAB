@@ -63,7 +63,7 @@ Install it for windows and run the command\
 ```bash
 ollama pull deepseek-r1
 ```
-To verify it runs,\
+To verify it runs,
 ```bash
 ollama run deepseek-r1
 ```
