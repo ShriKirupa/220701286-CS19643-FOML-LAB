@@ -24,6 +24,7 @@ Open VS Code terminal and run:
 ```bash
 git clone https://github.com/ShriKirupa/ML_Project.git
 cd ML_Project
+code .
 ```
 
 ---
