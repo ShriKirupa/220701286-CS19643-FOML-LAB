@@ -58,8 +58,8 @@ python -m pip install --upgrade pip
 
 ### 4.Install Ollama
 
-\
-Install it for windows and run the command\
+
+Install it for windows and run the command
 ```bash
 ollama pull deepseek-r1
 ```
