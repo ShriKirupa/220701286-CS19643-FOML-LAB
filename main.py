@@ -74,6 +74,11 @@ st.subheader("💬 Chat With Your Knowledge Base")
 
 if st.session_state.sources:
     user_input = st.chat_input("Ask something...")
+    # Display previous chat history
+    for role, message in st.session_state.chat_history:
+        with st.chat_message(role):
+            st.markdown(message)
+
 
     if user_input:
         st.chat_message("user").markdown(user_input)
@@ -131,14 +136,10 @@ if st.session_state.sources:
             # Save to chat history
             st.session_state.chat_history.append(("assistant", final_message))
 
-            # Show assistant message with typing animation
+            # Show assistant message without animation
             with st.chat_message("assistant"):
-                placeholder = st.empty()
-                animated_text = ""
-                for char in final_message:
-                    animated_text += char
-                    placeholder.markdown(animated_text)
-                    time.sleep(0.005)  # Adjust typing speed here
+                st.markdown(final_message)
+
 else:
     st.info("📥 Upload a file or enter text/URL to start chatting.")
 
