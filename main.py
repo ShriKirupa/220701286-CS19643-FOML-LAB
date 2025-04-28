@@ -70,6 +70,9 @@ for source in st.session_state.sources:
         key=f"checkbox_{source['name']}_{source.get('id', '')}"
     )
 
+# --- Calculate allowed knowledge sources ---
+allowed_ids = [src["id"] for src in st.session_state.sources if src.get("checked", False)]
+
 # --- Chat UI Begins Here ---
 st.subheader("💬 Chat With Your Knowledge Base")
 
@@ -84,7 +87,6 @@ if st.session_state.sources:
             st.markdown(message)
 
     user_input = st.session_state["user_input"]
-    allowed_ids = [src["id"] for src in st.session_state.sources if src.get("checked", False)]
 
     if user_input and user_input.strip():
         st.chat_message("user").markdown(user_input)
@@ -96,7 +98,7 @@ if st.session_state.sources:
             with st.spinner("🔍 Retrieving relevant information..."):
                 retrieved_chunks = vs.query(user_input, k=7, allowed_sources=allowed_ids)
 
-            context = "\n".join(retrieved_chunks[:3])
+            context = "\n".join(chunk['chunk'] for chunk in retrieved_chunks[:3])
             prompt = f"Use the following context to answer the question:\n\n{context}\n\nQuestion: {user_input}\nAnswer:"
 
             with st.expander("🔍 Show Retrieved Context"):
@@ -143,24 +145,93 @@ if st.button("🗑️ Clear Chat"):
 # --- Tools Panel for Mindmap, Flashcards, Quiz, Summary, Key Points ---
 st.sidebar.header("🔧 Smart Tools")
 
-if st.sidebar.button("🧠 Generate Mind Map"):
-    with st.spinner("🔍 Analyzing context..."):
-        retrieved_chunks = vs.get_all_texts(allowed_sources=allowed_ids)
-        context = "\n".join(retrieved_chunks[:3])
-        mindmap_prompt = f"Generate a mindmap based on the following context:\n\n{context}"
-        mindmap_response = call_deepseek(mindmap_prompt)
-        st.sidebar.expander("Mindmap Output", expanded=True).markdown(mindmap_response['full'])
+# --- Flashcard Generation ---
+flashcard_topic = st.sidebar.text_input("Enter topic/question for Flashcards", key="flashcard_topic")
 
 if st.sidebar.button("🎴 Generate Flashcards"):
-    with st.spinner("🔍 Analyzing context..."):
-        retrieved_chunks = vs.get_all_texts(allowed_sources=allowed_ids)
-        context = "\n".join(retrieved_chunks[:3])
-        flashcard_prompt = f"Generate flashcards based on the following context:\n\n{context}"
-        flashcard_response = call_deepseek(flashcard_prompt)
-        st.sidebar.expander("Flashcards Output", expanded=True).markdown(flashcard_response['full'])
+    if not flashcard_topic.strip():
+        st.sidebar.warning("⚠️ Please enter a topic or question first.")
+    elif not allowed_ids:
+        st.sidebar.warning("⚠️ Please select at least one knowledge source.")
+    else:
+        with st.spinner("🔍 Retrieving context for flashcards..."):
+            retrieved_chunks = vs.query(flashcard_topic, k=7, allowed_sources=allowed_ids)
+
+            if not retrieved_chunks:
+                st.sidebar.warning("⚠️ No relevant content found in the knowledge base.")
+            else:
+                context = "\n".join([chunk['chunk'] for chunk in retrieved_chunks[:3]])  # Get first 3 chunks as context
+                flashcard_prompt = f"""
+                    Generate flashcard questions and answers based ONLY on the following context:
+                    {context}
+                    - Provide at least 5 flashcards.
+                    - Each flashcard MUST follow this exact format:
+                      Question: [Your Question Here]
+                      Answer: [The Correct Answer Here]
+                    - Ensure there is a clear newline character separating the "Question:" and "Answer:" lines for each flashcard.
+                    - Start each new flashcard after a double newline character ('\\n\\n').
+                    """
+
+                flashcard_response = call_deepseek(flashcard_prompt)
+
+                if 'full' in flashcard_response:
+                    flashcard_output = flashcard_response['full']
+                    # Remove the <think> block entirely before processing
+                    flashcard_output = re.sub(r"<think>.*?</think>", "", flashcard_output, flags=re.DOTALL).strip()
+                    flashcard_lines = [line.strip() for line in flashcard_output.splitlines() if line.strip()]
+
+                    questions = []
+                    answers = []
+                    current_question = None
+
+                    for line in flashcard_lines:
+                        if line.startswith("Question:"):
+                            if current_question and answers:
+                                questions.append(current_question)
+                                if answers:
+                                    questions.append(answers.pop(0))
+                                current_question = line.replace("Question:", "").strip()
+                            elif current_question:
+                                questions.append(current_question)
+                                if answers:
+                                    questions.append(answers.pop(0))
+                                current_question = line.replace("Question:", "").strip()
+                            else:
+                                current_question = line.replace("Question:", "").strip()
+                        elif line.startswith("Answer:"):
+                            answers.append(line.replace("Answer:", "").strip())
+                        elif current_question:
+                            current_question += " " + line
+
+                    if current_question:
+                        questions.append(current_question)
+                        if answers:
+                            questions.append(answers.pop(0))
+
+                    if len(questions) >= 2 and len(questions) % 2 == 0:
+                        st.sidebar.markdown("### 🎴 Flashcards:")
+                        for i in range(0, len(questions), 2):
+                            question = questions[i]
+                            answer = questions[i+1]
+                            flashcard_html = f"""
+                                <div style="border: 1px solid #e1e4e8; border-radius: 5px; padding: 15px; margin-bottom: 10px;">
+                                    <p style="font-weight: bold; margin-top: 0;">Question:</p>
+                                    <p>{question}</p>
+                                    <details>
+                                        <summary style="cursor: pointer;">Show Answer</summary>
+                                        <p style="margin-top: 10px;"><strong>Answer:</strong> {answer}</p>
+                                    </details>
+                                </div>
+                            """
+                            st.markdown(flashcard_html, unsafe_allow_html=True)
+                    elif questions:
+                        st.sidebar.warning("⚠️ Could not parse flashcards into question-answer pairs.")
+                    else:
+                        st.sidebar.warning("⚠️ No flashcards generated.")
+                else:
+                    st.sidebar.warning("⚠️ No flashcards generated.")
 
 # 🚀 Updated Quiz Section: Input-based Quiz Generator
-st.sidebar.markdown("### ❓ Generate Quiz")
 quiz_question = st.sidebar.text_input("Enter topic/question for quiz", key="quiz_question")
 
 if st.sidebar.button("📋 Create Quiz"):
@@ -170,22 +241,19 @@ if st.sidebar.button("📋 Create Quiz"):
         st.sidebar.warning("⚠️ Please select at least one knowledge source.")
     else:
         with st.spinner("🔍 Retrieving context for quiz..."):
-            # Step 1: Retrieve relevant content from the knowledge base
             retrieved_chunks = vs.query(quiz_question, k=7, allowed_sources=allowed_ids)
 
             if not retrieved_chunks:
                 st.sidebar.warning("⚠️ No relevant content found in the knowledge base.")
             else:
-                # Step 2: Combine the relevant content into context for DeepSeek
                 context = "\n".join([chunk['chunk'] for chunk in retrieved_chunks[:3]])  # Get first 3 chunks as context
                 quiz_prompt = f"""
-                Create a quiz based ONLY on the following context:
-                {context}
-                - Format the questions as multiple choice.
-                - Provide 4 possible answers for each question.
-                """
+                    Create a quiz consists of 5 multiple-choice questions based ONLY on the following context:
+                    {context}
+                    - For each question, provide 4 possible answers.
+                    - Clearly indicate the correct answer using '(Correct Answer)'.
+                    """
 
-                # Step 3: Pass the context and topic to DeepSeek for quiz generation
                 quiz_response = call_deepseek(quiz_prompt)
 
                 if 'full' in quiz_response:
@@ -193,18 +261,29 @@ if st.sidebar.button("📋 Create Quiz"):
                 else:
                     st.sidebar.warning("⚠️ No quiz questions returned.")
 
-if st.sidebar.button("📝 Generate Summary"):
-    with st.spinner("🔍 Analyzing context..."):
-        retrieved_chunks = vs.get_all_texts(allowed_sources=allowed_ids)
-        context = "\n".join(retrieved_chunks[:3])
-        summary_prompt = f"Summarize the following context:\n\n{context}"
-        summary_response = call_deepseek(summary_prompt)
-        st.sidebar.expander("Summary Output", expanded=True).markdown(summary_response['full'])
+
+# ✨ Enhanced Key Points Generation with Input and Styling
+st.sidebar.header("🔑 Key Point Generator")
+key_points_input = st.sidebar.text_area("Enter text to generate key points from:", height=150)
 
 if st.sidebar.button("📌 Generate Key Points"):
-    with st.spinner("🔍 Analyzing context..."):
-        retrieved_chunks = vs.get_all_texts(allowed_sources=allowed_ids)
-        context = "\n".join(retrieved_chunks[:3])
-        keypoints_prompt = f"Generate key points from the following context:\n\n{context}"
-        keypoints_response = call_deepseek(keypoints_prompt)
-        st.sidebar.expander("Key Points Output", expanded=True).markdown(keypoints_response['full'])
+    if not key_points_input.strip():
+        st.sidebar.warning("⚠️ Please enter some text to generate key points.")
+    else:
+        with st.spinner("🔍 Analyzing text..."):
+            keypoints_prompt = f"""Generate concise and impactful key points from the following text, EXCLUDE any content within <think> tags. Ensure that each key point clearly explains a distinct concept .:\n\n{key_points_input}"""            
+            keypoints_response = call_deepseek(keypoints_prompt)
+
+            if 'full' in keypoints_response:
+                key_points_output = keypoints_response['full'].strip()
+                # Remove any <think> tags and their content from the final output
+                key_points_output = re.sub(r"<think>.*?</think>", "", key_points_output, flags=re.DOTALL).strip()
+                if key_points_output:
+                    st.sidebar.subheader("📝 Key Points:")
+                    key_points_list = [point.strip() for point in key_points_output.splitlines() if point.strip()]
+                    for i, point in enumerate(key_points_list):
+                        st.sidebar.markdown(f"- ✨ **Point {i+1}:** {point}")
+                else:
+                    st.sidebar.info("No key points were generated after filtering.")
+            else:
+                st.sidebar.error("Failed to generate key points.")
