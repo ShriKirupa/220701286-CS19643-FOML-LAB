@@ -6,3 +6,5 @@ requests
 PyPDF2
 pygments
 youtube-transcript-api
+SpeechRecognition 
+pyaudio

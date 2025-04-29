@@ -99,7 +99,27 @@ if st.session_state.sources:
                 retrieved_chunks = vs.query(user_input, k=7, allowed_sources=allowed_ids)
 
             context = "\n".join(chunk['chunk'] for chunk in retrieved_chunks[:3])
-            prompt = f"Use the following context to answer the question:\n\n{context}\n\nQuestion: {user_input}\nAnswer:"
+
+            # ✅ Add recent chat history as memory context
+            history_limit = 3
+            memory_context = ""
+            for role, msg in st.session_state.chat_history[-history_limit*2:]:
+                if role == "user":
+                    memory_context += f"User: {msg}\n"
+                else:
+                    memory_context += f"Assistant: {msg}\n"
+
+            # Updated prompt with contextual memory
+            prompt = f"""You are a helpful assistant.
+
+Here is the recent conversation:
+{memory_context}
+
+Use the following knowledge context to answer the user's question:
+{context}
+
+Current Question: {user_input}
+Answer:"""
 
             with st.expander("🔍 Show Retrieved Context"):
                 st.markdown(context)
