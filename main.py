@@ -180,110 +180,106 @@ if st.sidebar.button("🎴 Generate Flashcards"):
             if not retrieved_chunks:
                 st.sidebar.warning("⚠️ No relevant content found in the knowledge base.")
             else:
-                context = "\n".join([chunk['chunk'] for chunk in retrieved_chunks[:3]])  # Get first 3 chunks as context
+                context = "\n".join([chunk['chunk'] for chunk in retrieved_chunks[:3]])
                 flashcard_prompt = f"""
-                    Generate flashcard questions and answers based ONLY on the following context:
-                    {context}
-                    - Provide at least 5 flashcards.
-                    - Each flashcard MUST follow this exact format:
-                      Question: [Your Question Here]
-                      Answer: [The Correct Answer Here]
-                    - Ensure there is a clear newline character separating the "Question:" and "Answer:" lines for each flashcard.
-                    - Start each new flashcard after a double newline character ('\\n\\n').
-                    """
+                Generate 10 flashcards based ONLY on the following context:
+
+                {context}
+
+                Format strictly as:
+                Question: ...
+                Answer: ...
+
+                Separate each flashcard with a double newline.
+                """
 
                 flashcard_response = call_deepseek(flashcard_prompt)
+                output = flashcard_response.get("full", "").strip()
 
-                if 'full' in flashcard_response:
-                    flashcard_output = flashcard_response['full']
-                    # Remove the <think> block entirely before processing
-                    flashcard_output = re.sub(r"<think>.*?</think>", "", flashcard_output, flags=re.DOTALL).strip()
-                    flashcard_lines = [line.strip() for line in flashcard_output.splitlines() if line.strip()]
+                # Clean out <think> sections if present
+                output = re.sub(r"<think>.*?</think>", "", output, flags=re.DOTALL).strip()
 
-                    questions = []
-                    answers = []
-                    current_question = None
+                # Parse flashcards
+                flashcards_raw = re.split(r'\n{2,}', output)
+                flashcards = []
 
-                    for line in flashcard_lines:
-                        if line.startswith("Question:"):
-                            if current_question and answers:
-                                questions.append(current_question)
-                                if answers:
-                                    questions.append(answers.pop(0))
-                                current_question = line.replace("Question:", "").strip()
-                            elif current_question:
-                                questions.append(current_question)
-                                if answers:
-                                    questions.append(answers.pop(0))
-                                current_question = line.replace("Question:", "").strip()
-                            else:
-                                current_question = line.replace("Question:", "").strip()
-                        elif line.startswith("Answer:"):
-                            answers.append(line.replace("Answer:", "").strip())
-                        elif current_question:
-                            current_question += " " + line
+                for card in flashcards_raw:
+                    q_match = re.search(r"Question:\s*(.+)", card, re.IGNORECASE)
+                    a_match = re.search(r"Answer:\s*(.+)", card, re.IGNORECASE)
+                    if q_match and a_match:
+                        flashcards.append({
+                            "question": q_match.group(1).strip(),
+                            "answer": a_match.group(1).strip()
+                        })
 
-                    if current_question:
-                        questions.append(current_question)
-                        if answers:
-                            questions.append(answers.pop(0))
+                if flashcards:
+                    st.sidebar.markdown("### 🎴 Flashcards:")
+                    pastel_colors = ["#fef3c7", "#d1fae5", "#e0e7ff", "#fee2e2", "#f3e8ff"]  # soft, vibrant colors
 
-                    if len(questions) >= 2 and len(questions) % 2 == 0:
-                        st.sidebar.markdown("### 🎴 Flashcards:")
-                        for i in range(0, len(questions), 2):
-                            question = questions[i]
-                            answer = questions[i+1]
-                            flashcard_html = f"""
-                                <div style="border: 1px solid #e1e4e8; border-radius: 5px; padding: 15px; margin-bottom: 10px;">
-                                    <p style="font-weight: bold; margin-top: 0;">Question:</p>
-                                    <p>{question}</p>
-                                    <details>
-                                        <summary style="cursor: pointer;">Show Answer</summary>
-                                        <p style="margin-top: 10px;"><strong>Answer:</strong> {answer}</p>
-                                    </details>
-                                </div>
-                            """
-                            st.markdown(flashcard_html, unsafe_allow_html=True)
-                    elif questions:
-                        st.sidebar.warning("⚠️ Could not parse flashcards into question-answer pairs.")
-                    else:
-                        st.sidebar.warning("⚠️ No flashcards generated.")
+                    for i, card in enumerate(flashcards):
+                        bg_color = pastel_colors[i % len(pastel_colors)]
+                        flashcard_html = f"""
+                        <div style="
+                            background-color: {bg_color};
+                            border-radius: 12px;
+                            padding: 16px;
+                            margin-bottom: 15px;
+                            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.05);
+                            transition: transform 0.2s;
+                            font-family: 'Segoe UI', sans-serif;
+                        ">
+                            <p style="font-weight: bold; margin-top: 0; color: #1f2937;">🧠 Question:</p>
+                            <p style="margin-bottom: 10px; color: #111827;">{card['question']}</p>
+                            <details style="color: #065f46;">
+                                <summary style="cursor: pointer; font-weight: 600;"></summary>
+                                <p style="margin-top: 10px;"><strong>Answer:</strong> {card['answer']}</p>
+                            </details>
+                        </div>
+                        """
+                        st.markdown(flashcard_html, unsafe_allow_html=True)
                 else:
-                    st.sidebar.warning("⚠️ No flashcards generated.")
+                    st.sidebar.warning("⚠️ Could not parse any flashcards properly.")
 
-# 🚀 Updated Quiz Section: Input-based Quiz Generator
+# Input-based Quiz Generator (Sidebar)
 quiz_question = st.sidebar.text_input("Enter topic/question for quiz", key="quiz_question")
+if st.sidebar.button("📋 Generate Quiz"):
+    with st.spinner("🔍 Retrieving context for quiz..."):
+        # Assuming vs.query() and allowed_ids are defined elsewhere in your code
+        quiz_question = "Your predefined topic/question here"  # Replace with the topic you want to generate the quiz for
+        retrieved_chunks = vs.query(quiz_question, k=7, allowed_sources=allowed_ids)
 
-if st.sidebar.button("📋 Create Quiz"):
-    if not quiz_question.strip():
-        st.sidebar.warning("⚠️ Please enter a topic or question first.")
-    elif not allowed_ids:
-        st.sidebar.warning("⚠️ Please select at least one knowledge source.")
-    else:
-        with st.spinner("🔍 Retrieving context for quiz..."):
-            retrieved_chunks = vs.query(quiz_question, k=7, allowed_sources=allowed_ids)
+        if not retrieved_chunks:
+            st.warning("⚠️ No relevant content found in the knowledge base.")
+        else:
+            context = "\n".join([chunk['chunk'] for chunk in retrieved_chunks[:3]])  # Get first 3 chunks as context
+            quiz_prompt = f"""
+                Create a quiz consisting of 10 multiple-choice questions based ONLY on the following context:
+                {context}
+                - For each question, provide 4 possible answers.
+                - Clearly indicate the correct answer using '(Correct Answer)'.
+                """
 
-            if not retrieved_chunks:
-                st.sidebar.warning("⚠️ No relevant content found in the knowledge base.")
+            # Call to your DeepSeek function or API
+            quiz_response = call_deepseek(quiz_prompt)
+
+            if 'full' in quiz_response:
+                # Clean the response by removing "think" tag content
+                cleaned_quiz_data = re.sub(r'<think>.*?</think>', '', quiz_response['full'], flags=re.DOTALL)
+                
+                # Display the quiz in the main chat page
+                st.markdown("""<div style="text-align: center;"><h3>📋 Generated Quiz</h3></div>""", unsafe_allow_html=True)
+
+                # Print the cleaned quiz data for debugging
+                st.write("###  Quiz Data:", cleaned_quiz_data)
+
+                quiz_data = cleaned_quiz_data.split('\n')
+
             else:
-                context = "\n".join([chunk['chunk'] for chunk in retrieved_chunks[:3]])  # Get first 3 chunks as context
-                quiz_prompt = f"""
-                    Create a quiz consists of 5 multiple-choice questions based ONLY on the following context:
-                    {context}
-                    - For each question, provide 4 possible answers.
-                    - Clearly indicate the correct answer using '(Correct Answer)'.
-                    """
+                st.warning("⚠️ No quiz questions returned.")
 
-                quiz_response = call_deepseek(quiz_prompt)
-
-                if 'full' in quiz_response:
-                    st.sidebar.expander("Quiz Output", expanded=True).markdown(quiz_response['full'])
-                else:
-                    st.sidebar.warning("⚠️ No quiz questions returned.")
-
-
-# ✨ Enhanced Key Points Generation with Input and Styling
+# ✨ Enhanced Key Points Generation with Input and Styling (Sidebar)
 st.sidebar.header("🔑 Key Point Generator")
+
 key_points_input = st.sidebar.text_area("Enter text to generate key points from:", height=150)
 
 if st.sidebar.button("📌 Generate Key Points"):
@@ -299,11 +295,17 @@ if st.sidebar.button("📌 Generate Key Points"):
                 # Remove any <think> tags and their content from the final output
                 key_points_output = re.sub(r"<think>.*?</think>", "", key_points_output, flags=re.DOTALL).strip()
                 if key_points_output:
-                    st.sidebar.subheader("📝 Key Points:")
+                    # Show the key points result on the main page (chat page)
+                    st.markdown("""
+                        <div style="text-align: center;">
+                            <h3>✨ Key Points</h3>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    st.subheader("📝 Key Points:")
                     key_points_list = [point.strip() for point in key_points_output.splitlines() if point.strip()]
                     for i, point in enumerate(key_points_list):
-                        st.sidebar.markdown(f"- ✨ **Point {i+1}:** {point}")
+                        st.markdown(f"- ✨ **Point {i+1}:** {point}")
                 else:
-                    st.sidebar.info("No key points were generated after filtering.")
+                    st.info("No key points were generated after filtering.")
             else:
-                st.sidebar.error("Failed to generate key points.")
+                st.error("Failed to generate key points.")
