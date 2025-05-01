@@ -4,6 +4,9 @@ from loader import load_pdf, load_text, load_url, load_yt_transcript
 from vector_store import VectorStore
 from ollama_chat import call_deepseek
 import re
+import speech_recognition as sr 
+
+
 
 st.set_page_config("NotebookLM Clone", layout="wide")
 st.title("🧠 SmartBuddy")
@@ -166,9 +169,10 @@ if st.button("🗑️ Clear Chat"):
 st.sidebar.header("🔧 Smart Tools")
 
 # --- Flashcard Generation ---
+st.sidebar.header("🎴 Flashcards:")
 flashcard_topic = st.sidebar.text_input("Enter topic/question for Flashcards", key="flashcard_topic")
 
-if st.sidebar.button("🎴 Generate Flashcards"):
+if st.sidebar.button("🔖 Generate Flashcards"):
     if not flashcard_topic.strip():
         st.sidebar.warning("⚠️ Please enter a topic or question first.")
     elif not allowed_ids:
@@ -213,7 +217,7 @@ if st.sidebar.button("🎴 Generate Flashcards"):
                         })
 
                 if flashcards:
-                    st.sidebar.markdown("### 🎴 Flashcards:")
+                    
                     pastel_colors = ["#fef3c7", "#d1fae5", "#e0e7ff", "#fee2e2", "#f3e8ff"]  # soft, vibrant colors
 
                     for i, card in enumerate(flashcards):
@@ -239,43 +243,95 @@ if st.sidebar.button("🎴 Generate Flashcards"):
                         st.markdown(flashcard_html, unsafe_allow_html=True)
                 else:
                     st.sidebar.warning("⚠️ Could not parse any flashcards properly.")
+                    
+# Sidebar Header
+st.sidebar.markdown("Generate quizzes from your knowledge base 📖")
 
-# Input-based Quiz Generator (Sidebar)
-quiz_question = st.sidebar.text_input("Enter topic/question for quiz", key="quiz_question")
-if st.sidebar.button("📋 Generate Quiz"):
-    with st.spinner("🔍 Retrieving context for quiz..."):
-        # Assuming vs.query() and allowed_ids are defined elsewhere in your code
-        quiz_question = "Your predefined topic/question here"  # Replace with the topic you want to generate the quiz for
+quiz_question = st.sidebar.text_input("💬 Enter quiz topic or question", key="quiz_question")
+
+if st.sidebar.button("🎯 Generate Quiz"):
+    with st.spinner("🔍 Searching for relevant content..."):
         retrieved_chunks = vs.query(quiz_question, k=7, allowed_sources=allowed_ids)
 
         if not retrieved_chunks:
-            st.warning("⚠️ No relevant content found in the knowledge base.")
+            st.warning("⚠️ No relevant content found. Please try a different query.")
         else:
-            context = "\n".join([chunk['chunk'] for chunk in retrieved_chunks[:3]])  # Get first 3 chunks as context
-            quiz_prompt = f"""
-                Create a quiz consisting of 10 multiple-choice questions based ONLY on the following context:
-                {context}
-                - For each question, provide 4 possible answers.
-                - Clearly indicate the correct answer using '(Correct Answer)'.
-                """
+            with st.expander("🧾 Preview Retrieved Context"):
+                for idx, chunk in enumerate(retrieved_chunks[:3], 1):
+                    st.markdown(f"**Chunk {idx}:** {chunk['chunk']}")
 
-            # Call to your DeepSeek function or API
+            context = "\n".join([chunk['chunk'] for chunk in retrieved_chunks[:3]])
+            quiz_prompt = f"""
+            Create a quiz consisting of 10 multiple-choice questions based ONLY on the following context:
+            {context}
+            - For each question, provide 4 possible answers.
+            - Clearly indicate the correct answer using '(Correct Answer)'.
+            """
+
             quiz_response = call_deepseek(quiz_prompt)
 
             if 'full' in quiz_response:
-                # Clean the response by removing "think" tag content
                 cleaned_quiz_data = re.sub(r'<think>.*?</think>', '', quiz_response['full'], flags=re.DOTALL)
-                
-                # Display the quiz in the main chat page
-                st.markdown("""<div style="text-align: center;"><h3>📋 Generated Quiz</h3></div>""", unsafe_allow_html=True)
 
-                # Print the cleaned quiz data for debugging
-                st.write("###  Quiz Data:", cleaned_quiz_data)
+                st.markdown("<h2 style='text-align:center;'>📋 Your AI-Generated Quiz</h2><hr>", unsafe_allow_html=True)
 
-                quiz_data = cleaned_quiz_data.split('\n')
+                # Custom CSS
+                st.markdown("""
+                    <style>
+                        .quiz-card {
+                            background: linear-gradient(135deg, #f0f4ff, #dbe7ff);
+                            border-radius: 16px;
+                            padding: 20px;
+                            margin-bottom: 25px;
+                            box-shadow: 2px 4px 10px rgba(0,0,0,0.07);
+                        }
+                        .question-text {
+                            font-size: 18px;
+                            font-weight: bold;
+                            color: #1a1a1a;
+                            margin-bottom: 10px;
+                        }
+                        .option {
+                            margin-left: 15px;
+                            margin-bottom: 6px;
+                            padding: 6px 10px;
+                            border-radius: 8px;
+                            background-color: #fff;
+                            border: 1px solid #ddd;
+                        }
+                    </style>
+                """, unsafe_allow_html=True)
 
+                # Parse and display quiz
+                quiz_blocks = re.split(r'\n(?=\d+\.)', cleaned_quiz_data.strip())
+
+                for i, block in enumerate(quiz_blocks):
+                    lines = block.strip().split('\n')
+                    if not lines:
+                        continue
+
+                    question_text = re.sub(r"\*\*(.*?)\*\*", r"\1", lines[0]).strip()
+                    options = []
+
+                    for line in lines[1:]:
+                        clean_line = re.sub(r'\(Correct Answer\)', '', line).replace('-', '').strip()
+                        if clean_line:
+                            options.append(clean_line)
+
+                    options_html = "".join([f"<div class='option'>{opt}</div>" for opt in options])
+
+                    card_html = f""" 
+                    <div class='quiz-card'>
+                        <div class='question-text'>{question_text}</div>
+                        {options_html}
+                    </div>"""
+
+                    st.markdown(card_html, unsafe_allow_html=True)
+
+                st.success("✅ Quiz successfully generated!")
             else:
-                st.warning("⚠️ No quiz questions returned.")
+                st.warning("⚠️ Failed to generate quiz. Try again or check your API.")
+
 
 # ✨ Enhanced Key Points Generation with Input and Styling (Sidebar)
 st.sidebar.header("🔑 Key Point Generator")
@@ -303,9 +359,55 @@ if st.sidebar.button("📌 Generate Key Points"):
                     """, unsafe_allow_html=True)
                     st.subheader("📝 Key Points:")
                     key_points_list = [point.strip() for point in key_points_output.splitlines() if point.strip()]
-                    for i, point in enumerate(key_points_list):
-                        st.markdown(f"- ✨ **Point {i+1}:** {point}")
+                    for i,point in enumerate(key_points_list):
+                        # Clean up leading number if present like "1. Framing: ..."
+                        point = re.sub(r"^\d+\.\s*", "", point)
+                        # Emphasize first word before colon as title if applicable
+                        if ':' in point:
+                            title, desc = point.split(':', 1)
+                            st.markdown(f"- 💡 **{title.strip()}**: {desc.strip()}")
+                        else:
+                            st.markdown(f"- 💡 {point}")
+                        
                 else:
                     st.info("No key points were generated after filtering.")
             else:
                 st.error("Failed to generate key points.")
+
+def save_note_to_file(text):
+    """Save the recognized text as a note in a markdown file."""
+    with open("notes.md", "a") as file:
+        file.write(f"### Note:\n{text}\n\n")
+
+def record_note():
+    """Record voice, convert it to text and display in the Streamlit interface."""
+    recognizer = sr.Recognizer()
+    mic = sr.Microphone()
+
+    try:
+        with mic as source:
+            st.info("Say something...")
+            recognizer.adjust_for_ambient_noise(source)
+            audio = recognizer.listen(source)
+
+            # Use Google's Web Speech API for recognizing speech
+            text = recognizer.recognize_google(audio)
+            st.success(f"Recognized: {text}")
+
+            # Display the recognized text in the Streamlit app
+            st.sidebar.text_area("Your Note", value=text, height=150)
+
+            # Save the note to markdown file
+            save_note_to_file(text)
+
+    except sr.UnknownValueError:
+        st.error("Sorry, I could not understand your speech.")
+    except sr.RequestError as e:
+        st.error(f"Could not request results; {e}")
+
+# Streamlit interface
+st.sidebar.button("Voice Notes App")
+
+
+if st.button("Record Note"):
+    record_note()
