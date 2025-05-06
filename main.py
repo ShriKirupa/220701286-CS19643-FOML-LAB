@@ -75,45 +75,54 @@ for source in st.session_state.sources:
 
 # --- Calculate allowed knowledge sources ---
 allowed_ids = [src["id"] for src in st.session_state.sources if src.get("checked", False)]
-
 # --- Chat UI Begins Here ---
 st.subheader("💬 Chat With Your Knowledge Base")
+
+# Initialize session state variables if not present
+if "user_input" not in st.session_state:
+    st.session_state["user_input"] = ""
+if "user_input_ready" not in st.session_state:
+    st.session_state["user_input_ready"] = False
 
 if st.session_state.sources:
     user_input = st.chat_input("Ask something...")
 
-    if user_input:
+    if user_input:  # User just typed something
         st.session_state["user_input"] = user_input
+        st.session_state["user_input_ready"] = True  # Flag to process
 
+    # Display past chat history
     for role, message in st.session_state.chat_history:
         with st.chat_message(role):
             st.markdown(message)
 
-    user_input = st.session_state["user_input"]
+    # Only process if fresh user input is ready
+    if st.session_state.user_input_ready:
+        user_input = st.session_state["user_input"]
 
-    if user_input and user_input.strip():
-        st.chat_message("user").markdown(user_input)
-        st.session_state.chat_history.append(("user", user_input))
+        if user_input and user_input.strip():
+            st.chat_message("user").markdown(user_input)
+            st.session_state.chat_history.append(("user", user_input))
 
-        if not allowed_ids:
-            st.warning("⚠️ Please select at least one knowledge source.")
-        else:
-            with st.spinner("🔍 Retrieving relevant information..."):
-                retrieved_chunks = vs.query(user_input, k=7, allowed_sources=allowed_ids)
+            if not allowed_ids:
+                st.warning("⚠️ Please select at least one knowledge source.")
+            else:
+                with st.spinner("🔍 Retrieving relevant information..."):
+                    retrieved_chunks = vs.query(user_input, k=7, allowed_sources=allowed_ids)
 
-            context = "\n".join(chunk['chunk'] for chunk in retrieved_chunks[:3])
+                context = "\n".join(chunk['chunk'] for chunk in retrieved_chunks[:3])
 
-            # ✅ Add recent chat history as memory context
-            history_limit = 3
-            memory_context = ""
-            for role, msg in st.session_state.chat_history[-history_limit*2:]:
-                if role == "user":
-                    memory_context += f"User: {msg}\n"
-                else:
-                    memory_context += f"Assistant: {msg}\n"
+                # Add recent chat history as memory context
+                history_limit = 3
+                memory_context = ""
+                for role, msg in st.session_state.chat_history[-history_limit * 2:]:
+                    if role == "user":
+                        memory_context += f"User: {msg}\n"
+                    else:
+                        memory_context += f"Assistant: {msg}\n"
 
-            # Updated prompt with contextual memory
-            prompt = f"""You are a helpful assistant.
+                # Create prompt for DeepSeek
+                prompt = f"""You are a helpful assistant.
 
 Here is the recent conversation:
 {memory_context}
@@ -124,42 +133,46 @@ Use the following knowledge context to answer the user's question:
 Current Question: {user_input}
 Answer:"""
 
-            with st.expander("🔍 Show Retrieved Context"):
-                st.markdown(context)
+                with st.expander("🔍 Show Retrieved Context"):
+                    st.markdown(context)
 
-            with st.spinner("🧠 DeepSeek is thinking..."):
-                response = call_deepseek(prompt)
+                with st.spinner("🧠 DeepSeek is thinking..."):
+                    response = call_deepseek(prompt)
 
-            full_response = response.get("full", "").strip()
-            code_response = response.get("code")
-            code_response = code_response.strip() if code_response else ""
+                full_response = response.get("full", "").strip()
+                code_response = response.get("code")
+                code_response = code_response.strip() if code_response else ""
 
-            think_match = re.search(r"<think>(.*?)</think>", full_response, re.DOTALL)
-            think_text = think_match.group(1).strip() if think_match else ""
+                think_match = re.search(r"<think>(.*?)</think>", full_response, re.DOTALL)
+                think_text = think_match.group(1).strip() if think_match else ""
 
-            full_response = re.sub(r"<think>.*?</think>", "", full_response, flags=re.DOTALL).strip()
+                full_response = re.sub(r"<think>.*?</think>", "", full_response, flags=re.DOTALL).strip()
 
-            formatted_think = ""
-            if think_text:
-                formatted_think = f"> 💭 **DeepSeek Thinking:**\n>\n> " + "\n> ".join(think_text.splitlines())
+                formatted_think = ""
+                if think_text:
+                    formatted_think = f"> 💭 **DeepSeek Thinking:**\n>\n> " + "\n> ".join(think_text.splitlines())
 
-            formatted_code = ""
-            if code_response:
-                formatted_code = f"\n\n### Code:\n```python\n{code_response}\n```"
+                formatted_code = ""
+                if code_response:
+                    formatted_code = f"\n\n### Code:\n```python\n{code_response}\n```"
 
-            final_message = ""
-            if formatted_think:
-                final_message += formatted_think + "\n\n"
-            final_message += full_response if full_response else "⚠️ No answer returned."
-            final_message += formatted_code
+                final_message = ""
+                if formatted_think:
+                    final_message += formatted_think + "\n\n"
+                final_message += full_response if full_response else "⚠️ No answer returned."
+                final_message += formatted_code
 
-            st.session_state.chat_history.append(("assistant", final_message))
+                st.session_state.chat_history.append(("assistant", final_message))
 
-            with st.chat_message("assistant"):
-                st.markdown(final_message)
+                with st.chat_message("assistant"):
+                    st.markdown(final_message)
+
+        # ✅ Reset the flag after processing
+        st.session_state.user_input_ready = False
 
 else:
     st.info("📥 Upload a file or enter text/URL to start chatting.")
+
 
 # --- Optional Clear Button ---
 if st.button("🗑️ Clear Chat"):
@@ -168,7 +181,9 @@ if st.button("🗑️ Clear Chat"):
 # --- Tools Panel for Mindmap, Flashcards, Quiz, Summary, Key Points ---
 st.sidebar.header("🔧 Smart Tools")
 
-# --- Flashcard Generation ---
+if "flashcards" not in st.session_state:
+    st.session_state.flashcards = []
+
 st.sidebar.header("🎴 Flashcards:")
 flashcard_topic = st.sidebar.text_input("Enter topic/question for Flashcards", key="flashcard_topic")
 
