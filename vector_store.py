@@ -3,7 +3,6 @@ from sentence_transformers import SentenceTransformer
 import os
 import pickle
 import re
-
 from ollama_chat import call_deepseek
 
 class VectorStore:

@@ -136,7 +136,7 @@ Answer:"""
                 with st.expander("🔍 Show Retrieved Context"):
                     st.markdown(context)
 
-                with st.spinner("🧠 DeepSeek is thinking..."):
+                with st.spinner("🧠 SmartBuddy is thinking..."):
                     response = call_deepseek(prompt)
 
                 full_response = response.get("full", "").strip()
@@ -150,7 +150,7 @@ Answer:"""
 
                 formatted_think = ""
                 if think_text:
-                    formatted_think = f"> 💭 **DeepSeek Thinking:**\n>\n> " + "\n> ".join(think_text.splitlines())
+                    formatted_think = f"> 💭 **SmartBuddy Thinking:**\n>\n> " + "\n> ".join(think_text.splitlines())
 
                 formatted_code = ""
                 if code_response:
@@ -424,5 +424,5 @@ def record_note():
 st.sidebar.button("Voice Notes App")
 
 
-if st.button("Record Note"):
+if st.sidebar.button("Record Note"):
     record_note()
